@@ -27,7 +27,6 @@ class DeyeCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         session,
                         user_input[CONF_USERNAME],
                         user_input[CONF_PASSWORD],
-                        user_input[CONF_SERIAL_NUMBER],
                         user_input[CONF_APP_ID],
                         user_input[CONF_APP_SECRET],
                         user_input[CONF_BASE_URL]
@@ -55,7 +54,6 @@ class DeyeCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         session,
                         user_input[CONF_USERNAME],
                         user_input[CONF_PASSWORD],
-                        user_input[CONF_SERIAL_NUMBER],
                         user_input[CONF_APP_ID],
                         user_input[CONF_APP_SECRET],
                         user_input[CONF_BASE_URL]
