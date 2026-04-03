@@ -9,7 +9,12 @@ import aiofiles
 import asyncio
 
 from homeassistant.util import dt as dt_util
-from homeassistant.components.sensor import SensorEntity, SensorEntityDescription
+from homeassistant.components.sensor import (
+    SensorEntity,
+    SensorEntityDescription,
+    SensorDeviceClass,
+    SensorStateClass,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.config_entries import ConfigEntry
@@ -308,8 +313,8 @@ class DeyeCloudSensor(CoordinatorEntity, SensorEntity):
         name: str,
         unique_id: str,
         unit: str | None = None,
-        device_class: str | None = None,
-        state_class: str | None = None,
+        device_class: SensorDeviceClass | None = None,
+        state_class: SensorStateClass | None = None,
         extra_attributes: dict | None = None,
         station_id: str | None = None,
         date_key: str | None = None,
@@ -487,8 +492,8 @@ async def async_setup_entry(
                 name=name,
                 unique_id=uid,
                 unit="kWh",
-                device_class="energy",
-                state_class="total_increasing",
+                device_class=SensorDeviceClass.ENERGY,
+                state_class=SensorStateClass.TOTAL_INCREASING,
                 station_id=station_id,
                 date_key=f"{y}_{m}",
                 extra_attributes=record,
@@ -505,8 +510,8 @@ async def async_setup_entry(
                 name=name,
                 unique_id=uid,
                 unit="kWh",
-                device_class="energy",
-                state_class="total_increasing",
+                device_class=SensorDeviceClass.ENERGY,
+                state_class=SensorStateClass.TOTAL_INCREASING,
                 station_id=station_id,
                 date_key="current",
                 metric_key=metric_key,
@@ -526,8 +531,8 @@ async def async_setup_entry(
                 name=name,
                 unique_id=uid,
                 unit="kWh",
-                device_class="energy",
-                state_class="total_increasing",
+                device_class=SensorDeviceClass.ENERGY,
+                state_class=SensorStateClass.TOTAL_INCREASING,
                 station_id=station_id,
                 date_key="last",
                 metric_key=metric_key,
@@ -555,8 +560,8 @@ async def async_setup_entry(
                     name=name,
                     unique_id=uid,
                     unit="kWh",
-                    device_class="energy",
-                    state_class="total_increasing",
+                    device_class=SensorDeviceClass.ENERGY,
+                    state_class=SensorStateClass.TOTAL_INCREASING,
                     station_id=station_id,
                     date_key=rel_key,  # relative key
                     metric_key=metric_key,
@@ -577,26 +582,26 @@ async def async_setup_entry(
                 unit_device_class = None
                 unit_state_class = None
                 if unit == "kWh":
-                    unit_device_class = "energy"
-                    unit_state_class = "total_increasing"
+                   unit_device_class = SensorDeviceClass.ENERGY
+                   unit_state_class = SensorStateClass.TOTAL_INCREASING
                 elif unit == "W":
-                    unit_device_class = "power"
-                    unit_state_class = "measurement"
+                   unit_device_class = SensorDeviceClass.POWER
+                   unit_state_class = SensorStateClass.MEASUREMENT
                 elif unit == "V":
-                    unit_device_class = "voltage"
-                    unit_state_class = "measurement"
+                   unit_device_class = SensorDeviceClass.VOLTAGE
+                   unit_state_class = SensorStateClass.MEASUREMENT
                 elif unit == "A":
-                    unit_device_class = "current"
-                    unit_state_class = "measurement"
+                   unit_device_class = SensorDeviceClass.CURRENT
+                   unit_state_class = SensorStateClass.MEASUREMENT
                 elif unit == "%":
-                    unit_device_class = "battery"
-                    unit_state_class = "measurement"
-                elif unit in ["C", "°C"]:
-                    unit_device_class = "temperature"
-                    unit_state_class = "measurement"
+                   unit_device_class = SensorDeviceClass.BATTERY
+                   unit_state_class = SensorStateClass.MEASUREMENT
+                elif unit in ["°C", "C"]:
+                   unit_device_class = SensorDeviceClass.TEMPERATURE
+                   unit_state_class = SensorStateClass.MEASUREMENT
                 elif unit == "Hz":
-                    unit_device_class = "frequency"
-                    unit_state_class = "measurement"
+                   unit_device_class = SensorDeviceClass.FREQUENCY
+                   unit_state_class = SensorStateClass.MEASUREMENT
 
                 entities.append(DeyeCloudSensor(
                     coordinator=coordinator,
