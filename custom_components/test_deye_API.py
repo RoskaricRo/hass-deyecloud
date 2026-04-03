@@ -36,10 +36,14 @@ async def test_deye_api():
         # ==========================================
         token_url = f"{BASE_URL}/account/token?appId={APP_ID}"
         payload = {
-            "appSecret": APP_SECRET,
-            "username": USERNAME,
-            "password": _sha256(PASSWORD),
+          "appSecret": app_secret,
+          "password": _sha256(password),
         }
+    
+        if "@" in username:
+           payload["email"] = username
+        else:
+           payload["username"] = username
         
         logger.info("--- Step 1: Login and get token ---")
         logger.debug(f"URL: {token_url}")
