@@ -11,8 +11,10 @@ def _sha256(password: str) -> str:
     return hashlib.sha256(password.encode("utf-8")).hexdigest().lower()
 
 async def async_get_token(session: aiohttp.ClientSession, username, password, app_id, app_secret, base_url):
-    """Fetch the access token from DeyeCloud API."""
+    """Fetch the access token from DeyeCloud API according to the latest docs."""
     url = f"{base_url}/account/token?appId={app_id}"
+    
+    # Preverimo, ali je uporabnik vpisal email ali uporabniško ime
     payload = {
         "appSecret": app_secret,
         "password": _sha256(password),
@@ -22,8 +24,8 @@ async def async_get_token(session: aiohttp.ClientSession, username, password, ap
         payload["email"] = username
     else:
         payload["username"] = username
-    
-    _LOGGER.debug(f"Requesting token from API: {url} | Username: {username}")
+        
+    _LOGGER.debug(f"Requesting token from API: {url} | Sending {'email' if '@' in username else 'username'}: {username}")
     
     try:
         async with session.post(url, json=payload, timeout=15) as resp:
@@ -43,7 +45,7 @@ async def async_get_token(session: aiohttp.ClientSession, username, password, ap
             return j["accessToken"]
             
     except asyncio.TimeoutError:
-        _LOGGER.error("Timeout while requesting token from DeyeCloud API. Server might be down or rate-limiting.")
+        _LOGGER.error("Timeout while requesting token from DeyeCloud API.")
         raise
     except aiohttp.ClientResponseError as e:
         _LOGGER.error(f"HTTP error during token request: Status {e.status} - {e.message}")
@@ -67,7 +69,7 @@ async def async_control_solar_sell(session: aiohttp.ClientSession, token, base_u
         "deviceSn": device_sn
     }
     
-    _LOGGER.debug(f"Sending solar sell control command to {url} | Action: {action} | Device: {device_sn}")
+    _LOGGER.debug(f"Sending solar sell command to {url} | Action: {action}")
     
     try:
         async with session.post(url, json=payload, headers=headers, timeout=15) as resp:
@@ -80,7 +82,7 @@ async def async_control_solar_sell(session: aiohttp.ClientSession, token, base_u
             if not j.get("success"):
                 _LOGGER.error(f"Solar sell control failed: {j.get('msg', 'Unknown error')}")
             else:
-                _LOGGER.info(f"Successfully sent solar sell command '{action}' to device {device_sn}")
+                _LOGGER.info(f"Successfully sent command to device {device_sn}")
                 
             return j
             
