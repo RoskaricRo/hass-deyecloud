@@ -15,9 +15,13 @@ async def async_get_token(session: aiohttp.ClientSession, username, password, ap
     url = f"{base_url}/account/token?appId={app_id}"
     payload = {
         "appSecret": app_secret,
-        "username": username,
         "password": _sha256(password),
     }
+    
+    if "@" in username:
+        payload["email"] = username
+    else:
+        payload["username"] = username
     
     _LOGGER.debug(f"Requesting token from API: {url} | Username: {username}")
     
