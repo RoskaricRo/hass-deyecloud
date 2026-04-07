@@ -7,85 +7,65 @@ import json
 _LOGGER = logging.getLogger(__name__)
 
 def _sha256(password: str) -> str:
-    """Encrypt password using SHA256 as required by Deye API."""
     return hashlib.sha256(password.encode("utf-8")).hexdigest().lower()
 
 async def async_get_token(session: aiohttp.ClientSession, username, password, app_id, app_secret, base_url):
-    """Fetch the access token from DeyeCloud API according to the latest docs."""
     url = f"{base_url}/account/token?appId={app_id}"
-    
-    # Preverimo, ali je uporabnik vpisal email ali uporabniško ime
-    payload = {
-        "appSecret": app_secret,
-        "password": _sha256(password),
-    }
-    
-    if "@" in username:
-        payload["email"] = username
-    else:
-        payload["username"] = username
-        
-    _LOGGER.debug(f"Requesting token from API: {url} | Sending {'email' if '@' in username else 'username'}: {username}")
-    
+    payload = {"appSecret": app_secret, "password": _sha256(password)}
+    if "@" in username: payload["email"] = username
+    else: payload["username"] = username
+
+    _LOGGER.debug(f"Requesting token from API: {url}")
     try:
         async with session.post(url, json=payload, timeout=15) as resp:
             resp.raise_for_status()
-            
             raw_response = await resp.text()
-            _LOGGER.debug(f"Token response raw data: {raw_response}")
-            
             j = json.loads(raw_response)
             if not j.get("success"):
-                error_msg = j.get('msg', 'Unknown error')
-                error_code = j.get('code', 'Unknown code')
-                _LOGGER.error(f"Token request failed from Deye API. Message: {error_msg} (Code: {error_code})")
-                raise Exception(f"Token request failed: {error_msg}")
-            
-            _LOGGER.info("Successfully acquired DeyeCloud API token.")
+                raise Exception(f"Token request failed: {j.get('msg')}")
             return j["accessToken"]
-            
-    except asyncio.TimeoutError:
-        _LOGGER.error("Timeout while requesting token from DeyeCloud API.")
-        raise
-    except aiohttp.ClientResponseError as e:
-        _LOGGER.error(f"HTTP error during token request: Status {e.status} - {e.message}")
-        raise
     except Exception as e:
         _LOGGER.error(f"Unexpected error during token request: {e}")
         raise
 
 async def async_control_solar_sell(session: aiohttp.ClientSession, token, base_url, device_sn, is_enable):
-    """Send Solar Sell control command."""
     url = f"{base_url}/order/sys/solarSell/control"
-    
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json"
-    }
-    
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     action = "on" if is_enable else "off"
-    payload = {
-        "action": action,
-        "deviceSn": device_sn
-    }
-    
-    _LOGGER.debug(f"Sending solar sell command to {url} | Action: {action}")
-    
+    payload = {"action": action, "deviceSn": device_sn}
+
     try:
         async with session.post(url, json=payload, headers=headers, timeout=15) as resp:
             resp.raise_for_status()
-            
-            raw_response = await resp.text()
-            _LOGGER.debug(f"Solar sell control response raw data: {raw_response}")
-            
-            j = json.loads(raw_response)
-            if not j.get("success"):
-                _LOGGER.error(f"Solar sell control failed: {j.get('msg', 'Unknown error')}")
-            else:
-                _LOGGER.info(f"Successfully sent command to device {device_sn}")
-                
+            j = await resp.json()
+            if not j.get("success"): _LOGGER.error(f"Solar sell control failed: {j.get('msg')}")
             return j
-            
     except Exception as e:
         _LOGGER.error(f"Failed to execute solar sell control for device {device_sn}: {e}")
         raise
+
+async def async_get_device_alarms(session: aiohttp.ClientSession, token, base_url, device_sn):
+    """Fetch active diagnostic alarms for a specific device."""
+    # Uporabili bomo standardni endpoint za branje alarmov naprave
+    url = f"{base_url}/device/alertList"
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    payload = {"deviceSn": device_sn, "page": 1, "size": 20, "status": 0} # status 0 = active
+
+    try:
+        async with session.post(url, json=payload, headers=headers, timeout=10) as resp:
+            if resp.status != 200:
+                _LOGGER.debug(f"Alarm endpoint returned HTTP {resp.status}, ignoring.")
+                return []
+            j = await resp.json()
+            if not j.get("success"):
+                _LOGGER.debug(f"Alarm endpoint returned success: false. Ignoring.")
+                return []
+
+            # API ponavadi vrne list znotraj 'alertList' ali 'list' ali 'data'
+            alarms = j.get("alertList", j.get("list", j.get("items", j.get("data", []))))
+            if isinstance(alarms, list):
+                return alarms
+            return []
+    except Exception as e:
+        _LOGGER.debug(f"Could not fetch alarms for {device_sn} (Feature might not be supported by your account): {e}")
+        return []

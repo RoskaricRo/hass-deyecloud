@@ -9,12 +9,7 @@ import aiofiles
 import asyncio
 
 from homeassistant.util import dt as dt_util
-from homeassistant.components.sensor import (
-    SensorEntity,
-    SensorEntityDescription,
-    SensorDeviceClass,
-    SensorStateClass,
-)
+from homeassistant.components.sensor import SensorEntity, SensorEntityDescription, SensorDeviceClass, SensorStateClass
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.config_entries import ConfigEntry
@@ -301,6 +296,61 @@ class DeyeCloudCoordinator(DataUpdateCoordinator):
         return (station_id, data)
 
 
+
+class DeyeCloudAlarmSensor(CoordinatorEntity, SensorEntity):
+    """Representation of a Deye Cloud Alarm/Diagnostic Sensor."""
+
+    _attr_has_entity_name = True
+    _attr_icon = "mdi:alert-circle-outline"
+
+    def __init__(self, coordinator, name: str, unique_id: str, station_id: str, device_sn: str):
+        super().__init__(coordinator)
+        self._attr_name = name
+        self._attr_unique_id = unique_id
+        self.station_id = station_id
+        self.device_sn = device_sn
+
+    @property
+    def native_value(self):
+        """Return 'OK' if no alarms, or the number of active alarms."""
+        if not self.coordinator.data or not self.station_id:
+            return "Unknown"
+
+        station_data = self.coordinator.data.get(self.station_id)
+        if not station_data: return "Unknown"
+
+        alarms = station_data.get("alarms", {}).get(self.device_sn, [])
+        if not isinstance(alarms, list):
+            return "Unknown"
+
+        if len(alarms) == 0:
+            return "OK"
+        return f"{len(alarms)} Alarms"
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, self.device_sn)},
+            "name": f"Deye Inverter {self.device_sn}",
+            "manufacturer": "Deye",
+            "model": "Inverter",
+        }
+
+    @property
+    def extra_state_attributes(self):
+        """Return raw alarm data in attributes."""
+        if not self.coordinator.data or not self.station_id:
+            return {}
+
+        station_data = self.coordinator.data.get(self.station_id)
+        if not station_data: return {}
+
+        alarms = station_data.get("alarms", {}).get(self.device_sn, [])
+        return {
+            "active_alarms": alarms,
+            "alarm_count": len(alarms) if isinstance(alarms, list) else 0
+        }
+
 class DeyeCloudSensor(CoordinatorEntity, SensorEntity):
     """Representation of a Deye Cloud Sensor."""
 
@@ -570,6 +620,15 @@ async def async_setup_entry(
 
         # ==== DEVICE STATUS ====
         for device_sn, device_data in station_data.get("devices", {}).items():
+            # Add Alarm Diagnostic Sensor for this device
+            entities.append(DeyeCloudAlarmSensor(
+                coordinator=coordinator,
+                name=f"Diagnostic Alarms",
+                unique_id=f"{station_id}_{device_sn}_alarms",
+                station_id=station_id,
+                device_sn=device_sn
+            ))
+
             for data_item in device_data.get("dataList", []):
                 key = data_item.get("key")
                 if not key:
@@ -582,26 +641,26 @@ async def async_setup_entry(
                 unit_device_class = None
                 unit_state_class = None
                 if unit == "kWh":
-                   unit_device_class = SensorDeviceClass.ENERGY
-                   unit_state_class = SensorStateClass.TOTAL_INCREASING
+                    unit_device_class = SensorDeviceClass.ENERGY
+                    unit_state_class = SensorStateClass.TOTAL_INCREASING
                 elif unit == "W":
-                   unit_device_class = SensorDeviceClass.POWER
-                   unit_state_class = SensorStateClass.MEASUREMENT
+                    unit_device_class = SensorDeviceClass.POWER
+                    unit_state_class = SensorStateClass.MEASUREMENT
                 elif unit == "V":
-                   unit_device_class = SensorDeviceClass.VOLTAGE
-                   unit_state_class = SensorStateClass.MEASUREMENT
+                    unit_device_class = SensorDeviceClass.VOLTAGE
+                    unit_state_class = SensorStateClass.MEASUREMENT
                 elif unit == "A":
-                   unit_device_class = SensorDeviceClass.CURRENT
-                   unit_state_class = SensorStateClass.MEASUREMENT
+                    unit_device_class = SensorDeviceClass.CURRENT
+                    unit_state_class = SensorStateClass.MEASUREMENT
                 elif unit == "%":
-                   unit_device_class = SensorDeviceClass.BATTERY
-                   unit_state_class = SensorStateClass.MEASUREMENT
-                elif unit in ["°C", "C"]:
-                   unit_device_class = SensorDeviceClass.TEMPERATURE
-                   unit_state_class = SensorStateClass.MEASUREMENT
+                    unit_device_class = SensorDeviceClass.BATTERY
+                    unit_state_class = SensorStateClass.MEASUREMENT
+                elif unit in ["C", "°C"]:
+                    unit_device_class = SensorDeviceClass.TEMPERATURE
+                    unit_state_class = SensorStateClass.MEASUREMENT
                 elif unit == "Hz":
-                   unit_device_class = SensorDeviceClass.FREQUENCY
-                   unit_state_class = SensorStateClass.MEASUREMENT
+                    unit_device_class = SensorDeviceClass.FREQUENCY
+                    unit_state_class = SensorStateClass.MEASUREMENT
 
                 entities.append(DeyeCloudSensor(
                     coordinator=coordinator,
