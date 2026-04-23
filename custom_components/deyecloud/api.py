@@ -158,7 +158,7 @@ class DeyeCloudAPI:
         return data.get("stationDataItems", [])
 
     async def get_station_devices(
-        self, station_ids: list[int], page: int = 1, size: int = 20
+        self, station_ids: list[int], page: int = 1, size: int = 100
     ) -> list:
         """Fetch device list for stations (up to 10 stations per batch)."""
         data = await self._request(
@@ -213,7 +213,7 @@ class DeyeCloudAPI:
         return data.get("deviceDataList", [])
 
     async def get_device_list(
-        self, page: int = 1, size: int = 20
+        self, page: int = 1, size: int = 100
     ) -> list:
         """Fetch device list for business members."""
         data = await self._request(
