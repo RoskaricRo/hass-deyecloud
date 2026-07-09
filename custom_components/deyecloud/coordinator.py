@@ -1,7 +1,7 @@
 """DataUpdateCoordinator for Deye Cloud."""
 
 import logging
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from dateutil.relativedelta import relativedelta
 from homeassistant.config_entries import ConfigEntry
@@ -19,6 +19,152 @@ _LOGGER = logging.getLogger(__name__)
 
 SCAN_INTERVAL = timedelta(minutes=1)
 CONFIG_REFRESH_INTERVAL = timedelta(minutes=5)
+
+# ---------------------------------------------------------------------------
+# The helpers below are ported from heavenknows1978/hass-deyecloud. DeyeCloud
+# can lag right after local midnight and briefly keep returning yesterday's
+# daily bucket. Naively taking the first "today" record in that window can
+# feed yesterday's final totals into Home Assistant's Energy Dashboard as
+# today's data and create a negative delta once the real bucket appears.
+# ---------------------------------------------------------------------------
+
+_MIDNIGHT_STALE_GUARD = timedelta(hours=2)
+_FLOAT_EPSILON = 0.001
+_DAILY_ZERO_RECORD_KEYS = (
+    "generationValue",
+    "consumptionValue",
+    "gridValue",
+    "purchaseValue",
+    "chargeValue",
+    "dischargeValue",
+)
+
+
+def _parse_api_date(value) -> date | None:
+    """Parse a DeyeCloud date-like value into a date if possible."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+
+    # Some API regions return epoch timestamps (seconds or milliseconds).
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        try:
+            ts = float(value)
+            if ts > 1e12:  # milliseconds
+                ts /= 1000.0
+            if ts > 1e8:  # plausible epoch seconds (>1973)
+                return datetime.fromtimestamp(
+                    ts, tz=dt_util.DEFAULT_TIME_ZONE
+                ).date()
+        except (ValueError, OverflowError, OSError):
+            return None
+        return None
+
+    text = str(value).strip()
+    if not text:
+        return None
+
+    if text.isdigit() and len(text) >= 10:
+        return _parse_api_date(int(text))
+
+    text = text.replace("/", "-")
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).date()
+    except ValueError:
+        pass
+
+    try:
+        return datetime.strptime(text[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def _record_date(item: dict) -> date | None:
+    """Extract the calendar date a DeyeCloud data record belongs to."""
+    item_date = _parse_api_date(
+        item.get("date")
+        or item.get("time")
+        or item.get("timestamp")
+        or item.get("collectionTime")
+    )
+    if item_date is not None:
+        return item_date
+
+    year, month, day = item.get("year"), item.get("month"), item.get("day")
+    try:
+        if year and month and day:
+            return date(int(year), int(month), int(day))
+    except (TypeError, ValueError):
+        return None
+    return None
+
+
+def _numeric_value(record: dict | None, key: str) -> float | None:
+    if not record:
+        return None
+    try:
+        value = record.get(key)
+        if value is None or value == "":
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _records_look_like_same_daily_bucket(
+    record: dict | None, reference: dict | None
+) -> bool:
+    """Detect a stale "today" record that is likely copied from yesterday."""
+    if not record or not reference:
+        return False
+
+    matched_non_zero_values = 0
+    reference_non_zero_keys = 0
+    for key in _DAILY_ZERO_RECORD_KEYS:
+        current = _numeric_value(record, key)
+        previous = _numeric_value(reference, key)
+        if previous is not None and previous > _FLOAT_EPSILON:
+            reference_non_zero_keys += 1
+        if current is None or previous is None:
+            continue
+        tolerance = max(_FLOAT_EPSILON, previous * 0.02)
+        if previous > _FLOAT_EPSILON and abs(current - previous) <= tolerance:
+            matched_non_zero_values += 1
+
+    if reference_non_zero_keys == 0:
+        return False
+
+    required_matches = min(2, reference_non_zero_keys)
+    return matched_non_zero_values >= required_matches
+
+
+def _is_midnight_guard_window(now: datetime) -> bool:
+    start = datetime.combine(now.date(), datetime.min.time(), tzinfo=now.tzinfo)
+    return now - start < _MIDNIGHT_STALE_GUARD
+
+
+def _select_daily_record(
+    daily_items: list, day: str, *, allow_undated_fallback: bool
+) -> dict | None:
+    """Select only the record that actually belongs to the requested day."""
+    target = datetime.strptime(day, "%Y-%m-%d").date()
+    has_date_field = False
+
+    for item in daily_items:
+        item_date = _record_date(item)
+        if item_date is None:
+            continue
+        has_date_field = True
+        if item_date == target:
+            return item
+
+    if allow_undated_fallback and not has_date_field and len(daily_items) == 1:
+        return daily_items[0]
+
+    return None
 
 
 class DeyeCloudCoordinator(DataUpdateCoordinator):
@@ -184,28 +330,51 @@ class DeyeCloudCoordinator(DataUpdateCoordinator):
 
     async def _fetch_daily_history(self) -> dict:
         today = dt_util.now().date()
+        now = dt_util.now()
+        previous_daily = (self.data or {}).get("daily", {}) if self.data else {}
         daily: dict = {}
+
         for offset in range(3):  # today, yesterday, day_before
             d = today - timedelta(days=offset)
             start_date = d.isoformat()
             end_date = (d + timedelta(days=1)).isoformat()
+            is_today = offset == 0
             try:
                 items = await self.api.get_station_history(
                     self._station_id, 2, start_date, end_date
                 )
-                if items:
-                    for item in items:
-                        if item.get("date", "").startswith(start_date):
-                            daily[start_date] = item
-                            break
-                    else:
-                        daily[start_date] = items[0]
             except Exception as exc:
                 _LOGGER.warning(
                     "Failed to fetch daily history for %s: %s",
                     start_date,
                     exc,
                 )
+                continue
+
+            # Undated single-record fallback is disabled for "today" during
+            # the post-midnight guard window, to avoid mapping yesterday's
+            # only record into the new day.
+            allow_fallback = not (is_today and _is_midnight_guard_window(now))
+            record = _select_daily_record(
+                items or [], start_date, allow_undated_fallback=allow_fallback
+            )
+
+            if is_today and _is_midnight_guard_window(now):
+                yesterday_key = (today - timedelta(days=1)).isoformat()
+                reference = previous_daily.get(yesterday_key)
+                if _records_look_like_same_daily_bucket(record, reference):
+                    _LOGGER.debug(
+                        "Stale daily bucket detected for %s right after "
+                        "midnight; reporting zero until DeyeCloud refreshes",
+                        start_date,
+                    )
+                    record = {"date": start_date}
+                    for key in _DAILY_ZERO_RECORD_KEYS:
+                        record[key] = 0.0
+
+            if record is not None:
+                daily[start_date] = record
+
         return daily
 
     async def _safe_fetch(self, func, *args, **kwargs):

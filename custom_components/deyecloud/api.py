@@ -1,5 +1,6 @@
 """Deye Cloud API client."""
 
+import asyncio
 import hashlib
 import logging
 from datetime import datetime, timedelta
@@ -28,6 +29,7 @@ class DeyeCloudAPI:
         app_secret: str,
         email: str,
         password: str,
+        company_id: str | None = None,
     ):
         self._session = session
         self._base_url = base_url.rstrip("/")
@@ -37,38 +39,72 @@ class DeyeCloudAPI:
         self._password_hash = hashlib.sha256(
             password.encode("utf-8")
         ).hexdigest().lower()
+        self._company_id = str(company_id).strip() if company_id else None
         self._token: str | None = None
         self._token_expiry: datetime | None = None
 
     # ------------------------------------------------------------------ auth
 
     async def authenticate(self) -> str:
-        """Obtain a new access token. Returns the token string."""
+        """Obtain a new access token. Returns the token string.
+
+        If a company_id was configured, DeyeCloud returns a business/company
+        token instead of a personal-user token. This is required for some
+        installer/business accounts, which otherwise get an empty station
+        list and the integration fails to set up (ConfigEntryNotReady).
+        """
         url = f"{self._base_url}/account/token?appId={self._app_id}"
         payload = {
             "appSecret": self._app_secret,
             "email": self._email,
             "password": self._password_hash,
         }
-        async with self._session.post(
-            url, json=payload, timeout=aiohttp.ClientTimeout(total=10)
-        ) as resp:
-            resp.raise_for_status()
-            data = await resp.json()
-            if not data.get("success"):
-                raise DeyeCloudAuthError(
-                    f"Authentication failed: {data.get('msg')}"
-                )
-            self._token = data["accessToken"]
-            self._token_expiry = datetime.utcnow() + timedelta(minutes=25)
-            _LOGGER.debug("Token refreshed successfully")
-            return self._token
+        if self._company_id:
+            payload["companyId"] = self._company_id
+
+        data = await self._post_with_retry(url, payload, timeout=10)
+        if not data.get("success"):
+            raise DeyeCloudAuthError(
+                f"Authentication failed: {data.get('msg')}"
+            )
+        self._token = data["accessToken"]
+        self._token_expiry = datetime.utcnow() + timedelta(minutes=25)
+        _LOGGER.debug("Token refreshed successfully")
+        return self._token
 
     async def _ensure_token(self) -> None:
         now = datetime.utcnow()
         if self._token and self._token_expiry and self._token_expiry > now:
             return
         await self.authenticate()
+
+    # ------------------------------------------------------------- transport
+
+    async def _post_with_retry(
+        self, url: str, payload: dict, *, timeout: int = 10
+    ) -> dict:
+        """POST JSON with one retry on transient network/server errors.
+
+        Ported from heavenknows1978/hass-deyecloud: DeyeCloud occasionally
+        drops connections or times out, and without a retry that surfaces as
+        a full ConfigEntryNotReady / coordinator update failure.
+        """
+        last_exc: Exception | None = None
+        for attempt in range(2):
+            try:
+                async with self._session.post(
+                    url,
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=timeout),
+                ) as resp:
+                    resp.raise_for_status()
+                    return await resp.json()
+            except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+                last_exc = exc
+                if attempt == 1:
+                    break
+                await asyncio.sleep(1)
+        raise DeyeCloudAPIError(f"Request to {url} failed: {last_exc}") from last_exc
 
     # -------------------------------------------------------------- request
 
@@ -84,21 +120,30 @@ class DeyeCloudAPI:
         url = f"{self._base_url}{path}"
         headers = {"Authorization": f"Bearer {self._token}"}
 
-        async with self._session.request(
-            method,
-            url,
-            headers=headers,
-            json=json_data,
-            params=params,
-            timeout=aiohttp.ClientTimeout(total=15),
-        ) as resp:
-            resp.raise_for_status()
-            data = await resp.json()
-            if not data.get("success"):
-                msg = data.get("msg", "Unknown error")
-                code = data.get("code", "")
-                raise DeyeCloudAPIError(f"API error [{code}]: {msg}")
-            return data
+        last_exc: Exception | None = None
+        for attempt in range(2):
+            try:
+                async with self._session.request(
+                    method,
+                    url,
+                    headers=headers,
+                    json=json_data,
+                    params=params,
+                    timeout=aiohttp.ClientTimeout(total=15),
+                ) as resp:
+                    resp.raise_for_status()
+                    data = await resp.json()
+                    if not data.get("success"):
+                        msg = data.get("msg", "Unknown error")
+                        code = data.get("code", "")
+                        raise DeyeCloudAPIError(f"API error [{code}]: {msg}")
+                    return data
+            except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+                last_exc = exc
+                if attempt == 1:
+                    break
+                await asyncio.sleep(1)
+        raise DeyeCloudAPIError(f"Request to {url} failed: {last_exc}") from last_exc
 
     # ============================================================== Account
 
@@ -158,7 +203,7 @@ class DeyeCloudAPI:
         return data.get("stationDataItems", [])
 
     async def get_station_devices(
-        self, station_ids: list[int], page: int = 1, size: int = 100
+        self, station_ids: list[int], page: int = 1, size: int = 20
     ) -> list:
         """Fetch device list for stations (up to 10 stations per batch)."""
         data = await self._request(
@@ -213,7 +258,7 @@ class DeyeCloudAPI:
         return data.get("deviceDataList", [])
 
     async def get_device_list(
-        self, page: int = 1, size: int = 100
+        self, page: int = 1, size: int = 20
     ) -> list:
         """Fetch device list for business members."""
         data = await self._request(

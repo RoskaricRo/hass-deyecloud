@@ -11,6 +11,13 @@ CONF_APP_SECRET = "app_secret"
 CONF_BASE_URL = "base_url"
 CONF_START_MONTH = "start_month"
 
+# Optional. Required for some DeyeCloud installer/business accounts.
+# When set, token requests include companyId and the account is queried in
+# the business/company context instead of the personal-user context.
+# (Ported from heavenknows1978/hass-deyecloud, fixes ConfigEntryNotReady #12
+# for installer/business accounts that otherwise get an empty station list.)
+CONF_COMPANY_ID = "company_id"
+
 # Work mode options for /order/sys/workMode/update
 WORK_MODES = [
     "SELLING_FIRST",

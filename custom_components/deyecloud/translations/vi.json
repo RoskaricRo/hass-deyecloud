@@ -1,0 +1,38 @@
+{
+  "title": "DeyeCloud",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Kết nối DeyeCloud",
+        "description": "Nhập thông tin DeyeCloud OpenAPI.",
+        "data": {
+          "username": "Tên đăng nhập hoặc email",
+          "password": "Mật khẩu",
+          "serial_number": "Số serial bộ inverter",
+          "app_id": "App ID",
+          "app_secret": "App Secret",
+          "base_url": "Base URL",
+          "start_month": "Tháng bắt đầu",
+          "company_id": "Company ID (chỉ dành cho tài khoản installer/business)"
+        }
+      },
+      "reconfigure": {
+        "title": "Cấu hình lại DeyeCloud",
+        "description": "Cập nhật thông tin DeyeCloud OpenAPI.",
+        "data": {
+          "username": "Tên đăng nhập hoặc email",
+          "password": "Mật khẩu",
+          "serial_number": "Số serial bộ inverter",
+          "app_id": "App ID",
+          "app_secret": "App Secret",
+          "base_url": "Base URL",
+          "start_month": "Tháng bắt đầu",
+          "company_id": "Company ID (chỉ dành cho tài khoản installer/business)"
+        }
+      }
+    },
+    "error": {
+      "auth_failed": "Xác thực thất bại. Vui lòng kiểm tra tên đăng nhập/email, mật khẩu, App ID, App Secret, Base URL và Company ID (nếu có)."
+    }
+  }
+}

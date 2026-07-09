@@ -9,6 +9,7 @@ from .const import (
     CONF_APP_ID,
     CONF_APP_SECRET,
     CONF_BASE_URL,
+    CONF_COMPANY_ID,
     CONF_PASSWORD,
     CONF_USERNAME,
     DOMAIN,
@@ -31,6 +32,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         app_secret=entry.data[CONF_APP_SECRET],
         email=entry.data[CONF_USERNAME],
         password=entry.data[CONF_PASSWORD],
+        company_id=entry.data.get(CONF_COMPANY_ID),
     )
 
     coordinator = DeyeCloudCoordinator(hass, entry, api)

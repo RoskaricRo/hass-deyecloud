@@ -10,6 +10,7 @@ from .const import (
     CONF_APP_ID,
     CONF_APP_SECRET,
     CONF_BASE_URL,
+    CONF_COMPANY_ID,
     CONF_PASSWORD,
     CONF_SERIAL_NUMBER,
     CONF_START_MONTH,
@@ -29,6 +30,8 @@ DATA_SCHEMA = vol.Schema(
             default="https://eu1-developer.deyecloud.com/v1.0",
         ): str,
         vol.Required(CONF_START_MONTH, default="2024-01"): str,
+        # Only needed for DeyeCloud installer/business accounts.
+        vol.Optional(CONF_COMPANY_ID, default=""): str,
     }
 )
 
@@ -46,6 +49,7 @@ class DeyeCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 app_secret=user_input[CONF_APP_SECRET],
                 email=user_input[CONF_USERNAME],
                 password=user_input[CONF_PASSWORD],
+                company_id=user_input.get(CONF_COMPANY_ID) or None,
             )
             await api.authenticate()
 
@@ -117,6 +121,10 @@ class DeyeCloudConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Required(
                         CONF_START_MONTH,
                         default=current_data.get(CONF_START_MONTH, "2024-01"),
+                    ): str,
+                    vol.Optional(
+                        CONF_COMPANY_ID,
+                        default=current_data.get(CONF_COMPANY_ID, ""),
                     ): str,
                 }
             ),

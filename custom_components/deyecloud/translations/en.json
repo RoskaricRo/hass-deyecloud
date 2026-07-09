@@ -3,11 +3,36 @@
   "config": {
     "step": {
       "user": {
-        "title": "Connect to DeyeCloud"
+        "title": "Connect to DeyeCloud",
+        "description": "Enter your DeyeCloud OpenAPI credentials.",
+        "data": {
+          "username": "Username or email",
+          "password": "Password",
+          "serial_number": "Inverter serial number",
+          "app_id": "App ID",
+          "app_secret": "App Secret",
+          "base_url": "Base URL",
+          "start_month": "Start month",
+          "company_id": "Company ID (installer/business accounts only)"
+        }
       },
       "reconfigure": {
-        "title": "Reconfigure DeyeCloud"
+        "title": "Reconfigure DeyeCloud",
+        "description": "Update your DeyeCloud OpenAPI credentials.",
+        "data": {
+          "username": "Username or email",
+          "password": "Password",
+          "serial_number": "Inverter serial number",
+          "app_id": "App ID",
+          "app_secret": "App Secret",
+          "base_url": "Base URL",
+          "start_month": "Start month",
+          "company_id": "Company ID (installer/business accounts only)"
+        }
       }
+    },
+    "error": {
+      "auth_failed": "Authentication failed. Please check your username/email, password, App ID, App Secret, Base URL, and Company ID (if applicable)."
     }
   }
 }
