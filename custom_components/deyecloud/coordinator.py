@@ -179,7 +179,7 @@ class DeyeCloudCoordinator(DataUpdateCoordinator):
         self.entry = entry
         self.api = api
         self._serial_number = entry.data[CONF_SERIAL_NUMBER]
-        self._history_start = entry.data.get(CONF_START_MONTH, "2024-01")
+        self._history_start = entry.data.get(CONF_START_MONTH, "2026-04")
         self._last_config_refresh: datetime | None = None
         self._station_id: int | None = None
         self._device_sn: str | None = None
