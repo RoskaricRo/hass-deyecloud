@@ -24,6 +24,34 @@ A custom integration to connect your Home Assistant with your Deye solar inverte
 - 🌙 Midnight stale-data guard to keep Energy Dashboard totals accurate
 - ✅ Clean setup via UI, with reconfigure support
 - 🌐 English and Vietnamese translations
+- 🖼️ Bundled `deyecloud-energy-flow-card` Lovelace card — an animated
+  solar/battery/grid/home power-flow diagram, auto-registered by the
+  integration (no separate HACS frontend install needed)
+
+---
+
+## 🖼️ Dashboard Card
+
+The integration automatically serves and registers a custom Lovelace card
+that visualizes live power flow between solar, battery, grid, and home load,
+plus today's energy totals. Add it to a dashboard with:
+
+```yaml
+type: custom:deyecloud-energy-flow-card-v3
+show_daily: true
+show_efficiency: true
+animation: true
+
+# Optional when the account has multiple Deye stations:
+# station_id: "12345678"
+
+# Optional custom title:
+# title: My Solar Plant
+```
+
+No Lovelace resource entry or extra HACS frontend card is required — the
+card is bundled with this integration and loads automatically once it's
+set up. See `deyecloud-card.yaml` for the full example.
 
 ---
 

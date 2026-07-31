@@ -1,0 +1,57 @@
+# Changelog
+
+## 2.3.0 (RoskaricRo fork)
+
+- Ported the bundled `deyecloud-energy-flow-card-v3` Lovelace card and its
+  automatic frontend registration from heavenknows1978/hass-deyecloud.
+- Refactored the daily-bucket stale-data guard into a dependency-free
+  `data.py` module with a full unit-test suite (`tests/test_daily_data.py`).
+- Improved the stale-data guard to keep rejecting a copied "yesterday"
+  bucket for as long as the cached "today" value is still a placeholder,
+  not just for a fixed 2-hour window after midnight.
+- Added `/station/list` pagination so accounts with many stations don't
+  silently lose stations past the first page.
+- Added `℃` as a recognized temperature unit variant.
+- Exposed `metric_key` as a sensor state attribute so the bundled card can
+  auto-discover the right entities.
+
+## 2.2.5
+
+- Fixed the permanent loading spinner in Home Assistant's card picker.
+- Mutated `window.customCards` in place instead of replacing the registry array.
+- Added a fresh `deyecloud-energy-flow-card-v3` custom element to bypass stale browser registrations.
+- Corrected the backend frontend-file existence check to validate the file that is actually served.
+- Added stale DeyeCloud card metadata cleanup without breaking Home Assistant's registry reference.
+- Preserved legacy YAML compatibility through the existing `custom:deyecloud-energy-flow-card` alias.
+
+## 2.2.3
+
+- Fixed the frontend resource cache key still using `v=2.2.1`.
+- Disabled long-lived HTTP caching for the bundled development resource path.
+- Disabled live card-picker preview to prevent `Custom element not found` race errors.
+- Replaces stale `window.customCards` metadata entries when a newer card version loads.
+- Registers the frontend resource from both integration setup paths for improved reliability.
+- Added the exact registered module URL to the Home Assistant log.
+
+## 2.2.2
+
+- Redesigned the realtime diagram section with a cleaner, more spacious layout.
+- Reduced visual crowding between Solar, Battery, Inverter, Grid and Home nodes.
+- Made node cards larger and easier to read in narrow dashboard columns.
+- Showed line power badges only when a power flow is active to reduce clutter.
+- Fixed intermittent card render errors by hardening language detection and adding render error fallback.
+- Replaced the `hass-more-info` event with `CustomEvent` for better compatibility.
+- Added a safe in-card error state instead of a broken card when runtime issues occur.
+
+# Changelog
+
+## 2.2.0
+
+- Bundled the new `custom:deyecloud-energy-flow-card` frontend card.
+- Automatically serves and loads the card through the DeyeCloud integration.
+- Added animated PV, battery, grid, inverter and load power-flow visualization.
+- Added automatic entity discovery by `station_id` and `metric_key`.
+- Added visual card editor, multi-station selection and Home Assistant 2026.6 entity suggestions.
+- Added daily energy summary and live efficiency diagnostics.
+- Added Vietnamese/English labels, responsive layout and light/dark theme support.
+- Added normalized sensor attributes (`sensor_type`, `metric_key`, station metadata) for reliable frontend discovery.

@@ -77,6 +77,7 @@ _UNIT_MAP = {
     "%": (PERCENTAGE, SensorDeviceClass.BATTERY, SensorStateClass.MEASUREMENT),
     "°C": (UnitOfTemperature.CELSIUS, SensorDeviceClass.TEMPERATURE, SensorStateClass.MEASUREMENT),
     "C": (UnitOfTemperature.CELSIUS, SensorDeviceClass.TEMPERATURE, SensorStateClass.MEASUREMENT),
+    "℃": (UnitOfTemperature.CELSIUS, SensorDeviceClass.TEMPERATURE, SensorStateClass.MEASUREMENT),
     "Hz": (UnitOfFrequency.HERTZ, SensorDeviceClass.FREQUENCY, SensorStateClass.MEASUREMENT),
 }
 
@@ -266,8 +267,8 @@ class DeyeCloudSensor(CoordinatorEntity, SensorEntity):
             self._attr_state_class = state_class
         self._extra_attributes = extra_attributes or {}
         self._station_id = station_id
-        self._date_key = date_key
         self._metric_key = metric_key
+        self._date_key = date_key
         self._device_sn = device_sn
         self._device_key = device_key
 
@@ -338,6 +339,8 @@ class DeyeCloudSensor(CoordinatorEntity, SensorEntity):
         attrs = self._extra_attributes.copy()
         if self._station_id is not None:
             attrs["station_id"] = self._station_id
+        if self._metric_key:
+            attrs["metric_key"] = self._metric_key
         if self._date_key:
             if self._sensor_type == "monthly_raw":
                 attrs["year"] = int(self._date_key.split("_")[0])

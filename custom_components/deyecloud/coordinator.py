@@ -14,6 +14,11 @@ from homeassistant.util import dt as dt_util
 
 from .api import DeyeCloudAPI, DeyeCloudAPIError, DeyeCloudAuthError
 from .const import CONF_SERIAL_NUMBER, CONF_START_MONTH
+from .data import (
+    _DAILY_ZERO_RECORD_KEYS,
+    empty_daily_record as _empty_daily_record,
+    should_reject_stale_today as _should_reject_stale_today,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -21,23 +26,17 @@ SCAN_INTERVAL = timedelta(minutes=1)
 CONFIG_REFRESH_INTERVAL = timedelta(minutes=5)
 
 # ---------------------------------------------------------------------------
-# The helpers below are ported from heavenknows1978/hass-deyecloud. DeyeCloud
-# can lag right after local midnight and briefly keep returning yesterday's
-# daily bucket. Naively taking the first "today" record in that window can
-# feed yesterday's final totals into Home Assistant's Energy Dashboard as
-# today's data and create a negative delta once the real bucket appears.
+# Date-parsing and daily-record-selection helpers below are ported from
+# heavenknows1978/hass-deyecloud. DeyeCloud can lag right after local
+# midnight and briefly keep returning yesterday's daily bucket. Naively
+# taking the first "today" record in that window can feed yesterday's final
+# totals into Home Assistant's Energy Dashboard as today's data and create a
+# negative delta once the real bucket appears. The stale-bucket detection
+# itself (records_look_like_same_daily_bucket / should_reject_stale_today)
+# lives in data.py as dependency-free, unit-testable pure functions.
 # ---------------------------------------------------------------------------
 
 _MIDNIGHT_STALE_GUARD = timedelta(hours=2)
-_FLOAT_EPSILON = 0.001
-_DAILY_ZERO_RECORD_KEYS = (
-    "generationValue",
-    "consumptionValue",
-    "gridValue",
-    "purchaseValue",
-    "chargeValue",
-    "dischargeValue",
-)
 
 
 def _parse_api_date(value) -> date | None:
@@ -100,45 +99,6 @@ def _record_date(item: dict) -> date | None:
     except (TypeError, ValueError):
         return None
     return None
-
-
-def _numeric_value(record: dict | None, key: str) -> float | None:
-    if not record:
-        return None
-    try:
-        value = record.get(key)
-        if value is None or value == "":
-            return None
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _records_look_like_same_daily_bucket(
-    record: dict | None, reference: dict | None
-) -> bool:
-    """Detect a stale "today" record that is likely copied from yesterday."""
-    if not record or not reference:
-        return False
-
-    matched_non_zero_values = 0
-    reference_non_zero_keys = 0
-    for key in _DAILY_ZERO_RECORD_KEYS:
-        current = _numeric_value(record, key)
-        previous = _numeric_value(reference, key)
-        if previous is not None and previous > _FLOAT_EPSILON:
-            reference_non_zero_keys += 1
-        if current is None or previous is None:
-            continue
-        tolerance = max(_FLOAT_EPSILON, previous * 0.02)
-        if previous > _FLOAT_EPSILON and abs(current - previous) <= tolerance:
-            matched_non_zero_values += 1
-
-    if reference_non_zero_keys == 0:
-        return False
-
-    required_matches = min(2, reference_non_zero_keys)
-    return matched_non_zero_values >= required_matches
 
 
 def _is_midnight_guard_window(now: datetime) -> bool:
@@ -351,26 +311,34 @@ class DeyeCloudCoordinator(DataUpdateCoordinator):
                 )
                 continue
 
-            # Undated single-record fallback is disabled for "today" during
-            # the post-midnight guard window, to avoid mapping yesterday's
-            # only record into the new day.
-            allow_fallback = not (is_today and _is_midnight_guard_window(now))
+            # Undated single-record fallback is disabled for "today" while
+            # we're still guarding against a stale bucket, to avoid mapping
+            # yesterday's only record into the new day.
+            cached_today = previous_daily.get(start_date) if is_today else None
+            in_guard_window = is_today and _is_midnight_guard_window(now)
+            guarding_placeholder = bool(
+                cached_today and cached_today.get("_deyecloud_placeholder")
+            )
+            allow_fallback = not (in_guard_window or guarding_placeholder)
             record = _select_daily_record(
                 items or [], start_date, allow_undated_fallback=allow_fallback
             )
 
-            if is_today and _is_midnight_guard_window(now):
+            if is_today:
                 yesterday_key = (today - timedelta(days=1)).isoformat()
                 reference = previous_daily.get(yesterday_key)
-                if _records_look_like_same_daily_bucket(record, reference):
+                if _should_reject_stale_today(
+                    record,
+                    reference,
+                    cached_today,
+                    in_midnight_guard=in_guard_window,
+                ):
                     _LOGGER.debug(
-                        "Stale daily bucket detected for %s right after "
-                        "midnight; reporting zero until DeyeCloud refreshes",
+                        "Stale daily bucket detected for %s; reporting "
+                        "zero until DeyeCloud publishes real data",
                         start_date,
                     )
-                    record = {"date": start_date}
-                    for key in _DAILY_ZERO_RECORD_KEYS:
-                        record[key] = 0.0
+                    record = _empty_daily_record(start_date)
 
             if record is not None:
                 daily[start_date] = record

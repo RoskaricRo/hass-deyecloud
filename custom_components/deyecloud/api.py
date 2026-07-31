@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 
 import aiohttp
 
+from .data import batched_device_serials
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -157,11 +159,26 @@ class DeyeCloudAPI:
     async def get_station_list(
         self, page: int = 1, size: int = 100
     ) -> list:
-        """Fetch station list under account."""
-        data = await self._request(
-            "POST", "/station/list", {"page": page, "size": size}
-        )
-        return data.get("stationList", [])
+        """Fetch station list under account.
+
+        Loops through all pages rather than returning only the first, since
+        DeyeCloud paginates /station/list and accounts with many stations
+        would otherwise silently lose stations past the first page.
+        (Ported from heavenknows1978/hass-deyecloud.)
+        """
+        stations: list = []
+        current_page = page
+        while True:
+            data = await self._request(
+                "POST", "/station/list", {"page": current_page, "size": size}
+            )
+            page_items = data.get("stationList") or []
+            stations.extend(page_items)
+            total = data.get("total") or data.get("stationTotal")
+            if (total is not None and len(stations) >= int(total)) or len(page_items) < size:
+                break
+            current_page += 1
+        return stations
 
     async def get_station_latest(self, station_id: int) -> dict:
         """Retrieve latest real-time station data."""
@@ -251,11 +268,18 @@ class DeyeCloudAPI:
     # ============================================================== Device
 
     async def get_device_latest(self, device_sns: list[str]) -> list:
-        """Fetch latest device data; batch up to 10 devices."""
-        data = await self._request(
-            "POST", "/device/latest", {"deviceList": device_sns}
-        )
-        return data.get("deviceDataList", [])
+        """Fetch latest device data.
+
+        /device/latest accepts at most 10 serials per call, so requests for
+        more than 10 are automatically split into batches and combined.
+        """
+        results: list = []
+        for batch in batched_device_serials(device_sns):
+            data = await self._request(
+                "POST", "/device/latest", {"deviceList": batch}
+            )
+            results.extend(data.get("deviceDataList", []))
+        return results
 
     async def get_device_list(
         self, page: int = 1, size: int = 100
